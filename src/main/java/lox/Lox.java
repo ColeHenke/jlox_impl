@@ -55,6 +55,10 @@ public class Lox {
         // Stop if there was a syntax error.
         if (hadError) return;
 
+        // run resolver only if the parser did not find any errors
+        Resolver resolver = new Resolver(interpreter);
+        resolver.resolve(statements);
+
         interpreter.interpret(statements);
 
         // this line is no longer needed not that the interpreter can handle runtime errors
