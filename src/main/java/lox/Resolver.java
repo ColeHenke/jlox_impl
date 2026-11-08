@@ -6,6 +6,11 @@ import java.util.Map;
 import java.util.Stack;
 
 class Resolver implements Expr.Visitor<Void>, Stmt.Visitor<Void> {
+    private enum FunctionType {
+        NONE,
+        FUNCTION
+    }
+
     private final Interpreter interpreter;
     // lexical scopes behave like a stack
     // each element in the stack is a map that represents a single block scope
@@ -15,6 +20,9 @@ class Resolver implements Expr.Visitor<Void>, Stmt.Visitor<Void> {
     // when resolving a var, if it can be found in the stack of local scopes,
     //      it must be global
     private final Stack<Map<String, Boolean>> scopes = new Stack<>();
+
+    // track if we are in a function declaration or not
+    private FunctionType currentFunction = FunctionType.NONE;
 
     Resolver(Interpreter interpreter) {
         this.interpreter = interpreter;
@@ -45,7 +53,7 @@ class Resolver implements Expr.Visitor<Void>, Stmt.Visitor<Void> {
         // define the name eagerly to allow for recursive calls
         define(stmt.name);
 
-        resolveFunction(stmt);
+        resolveFunction(stmt, FunctionType.FUNCTION);
         return null;
     }
 
@@ -72,6 +80,10 @@ class Resolver implements Expr.Visitor<Void>, Stmt.Visitor<Void> {
 
     @Override
     public Void visitReturnStmt(Stmt.Return stmt) {
+        if (currentFunction == FunctionType.NONE) {
+            // return statement is not with a function body - bad
+            Lox.error(stmt.keyword, "Can't return from top-level code.");
+        }
         if (stmt.value != null) {
             resolve(stmt.value);
         }
@@ -159,7 +171,11 @@ class Resolver implements Expr.Visitor<Void>, Stmt.Visitor<Void> {
         }
     }
 
-    private void resolveFunction(Stmt.Function function) {
+    private void resolveFunction(Stmt.Function function, FunctionType type) {
+        // we need to store the previous value since functions can be nested arbitrarily deeply
+        FunctionType enclosingFunction = currentFunction;
+        currentFunction = type;
+
         beginScope();
         for (Token param : function.params) {
             declare(param);
@@ -167,6 +183,9 @@ class Resolver implements Expr.Visitor<Void>, Stmt.Visitor<Void> {
         }
         resolve(function.body);
         endScope();
+
+        // restore the field to the previous value
+        currentFunction = enclosingFunction;
     }
 
     private void beginScope() {
@@ -202,8 +221,16 @@ class Resolver implements Expr.Visitor<Void>, Stmt.Visitor<Void> {
     //      the var's initializer
     private void declare(Token name) {
         if (scopes.isEmpty()) return;
-
         Map<String, Boolean> scope = scopes.peek();
+
+        // prevent
+        //{
+        //  var a = "first";
+        //  var a = "second";
+        //}
+        if (scope.containsKey(name.lexeme)) {
+            Lox.error(name, "Already a variable with this name in this scope.");
+        }
         scope.put(name.lexeme, false);
     }
 
